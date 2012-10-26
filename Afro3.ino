@@ -52,7 +52,7 @@ unsigned char requestID=0; //the last query the arduino has seen.
 
 long int t0=0; //the last time the user task was run
 long int userTaskInterval=100; //the time interval between calls to the user task
-boolean doUserTask=false;
+long int userTaskCounter=0;
 
 
 void userTask(){
@@ -89,7 +89,7 @@ void loop() {
     }
   }
   else{
-    if (doUserTask && ((millis()-t0)>userTaskInterval) && ((userTaskCounter==-1) ||(userTaskCounter>0))){
+    if ((userTaskCounter!=0) && ((millis()-t0)>userTaskInterval)){
       if (userTaskCounter>0) {
         userTaskCounter--;
       }
@@ -281,17 +281,9 @@ int execute(unsigned char operation,unsigned char operand1,int operand2){
     return broadcastDelay;
     break;
 
-  case 6: //User task activate
-    if (operand2==0) {userTaskCounter=-1;}
-    else  {userTaskCounter=operand2;}
-    
-    doUserTask=(operand2!=0);
-    if (doUserTask) {
-      return 1;
-    }
-    else {
-      return 0;
-    }
+  case 6: //User task control
+    if (operand2==65535) {userTaskCounter=-1; return 65535;}
+    else  {userTaskCounter=operand2; return operand2;}    
     break;
 
   default:
