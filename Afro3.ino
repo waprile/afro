@@ -11,6 +11,7 @@
 //v 0.0.3 output is more quiet, added ping and broadcast
 //v 0.0.2 fixes, added timed pulse and better semantics for PWM
 //v 0.0.1 two hour hack
+//v 0.0.0 you want WHAT in four days? October 2012
 
 //XX        1111     
 //01234567890123
