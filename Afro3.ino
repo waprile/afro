@@ -25,19 +25,23 @@
 //AFZPD @FA set digital pin 3 to 50% PWM
 //AFZRHxxFA read digital pin 7 
 //AFZTD  FA 8224 milliseconds pulse to pin 3
-//AFZUXxxFA start user task
-//AFZUX/00/00FA stop user task
+//AFZUX/xFF/xFFFA start user task, repeat forever
+//AFZUx/x00/x00  FA start the user task, repeat 8224 times
+//AFZUX/x00/x00FA stop user task
+
+
 //AFZQAxxFA queries the Arduino. Are you there?
 //AFÿQAxxFA queries any Arduino out there.
 //AFÿWNxxFA turn on all pin 13s on the network (disco)
 
 //the ID of this Arduino. Important only if you are sharing a port with others
 //as in the ZigBee case.
-unsigned char id = 'Z'; //
+
+unsigned char id = 'N'; //
 
 //enable to show debugging information about parsing and operations
 //not so good on broadcast channels
-boolean debug=false; 
+boolean debug=true; 
 
 //debug mode will toggle this pin regularly, to let you know the parser is working
 int beeperPin=12;
@@ -55,11 +59,18 @@ long int t0=0; //the last time the user task was run
 long int userTaskInterval=100; //the time interval between calls to the user task
 long int userTaskCounter=0;
 
+unsigned char userTaskOperand1; //a copy for the use of the userTask;
 
-void userTask(){
+void userTask(long int t){
   static boolean blinkState=true;
   digitalWrite(13,blinkState);
   blinkState= !blinkState;
+  Serial.print(userTaskCounter);
+  Serial.print(" ");
+  Serial.print(userTaskOperand1);
+  Serial.print(" ");
+    Serial.print(readVcc());
+  Serial.println(t);
 }
 
 
@@ -83,8 +94,8 @@ void loop() {
       }
       Serial.print("SR");
       Serial.write(id);
-      Serial.write(res0);
-      Serial.write(highByte(res));
+      Serial.write(res0);           //secondary result, one byte
+      Serial.write(highByte(res));  //primary result, two bytes
       Serial.write(lowByte(res));
       Serial.print("RS");
     }
@@ -95,7 +106,7 @@ void loop() {
         userTaskCounter--;
       }
       t0=millis();
-      userTask();
+      userTask(t0);
     }
   }
 }
@@ -174,6 +185,9 @@ int processBuffer(){
     else if (c=='U') { //Control user task
       op=6;
     }
+    else if (c=='I') { //state of all digital pins
+      op=7;
+    }
 
     else {
       state=0;
@@ -182,7 +196,7 @@ int processBuffer(){
     break;
 
   case 4: //read first operand in
-    operand1=c-65;
+    operand1=c;
     state=5;
     break;
 
@@ -215,6 +229,9 @@ int processBuffer(){
       return -6; //very bad finish at the very end
     }
     break;
+    
+  default:
+    return -7; //automaton hit a state it does not know. Very bad.
 
   }
   return 0;
@@ -236,6 +253,7 @@ int execute(unsigned char operation,unsigned char operand1,int operand2){
 
   switch (operation) {
   case 0: //read
+  operand1-=65; //A is pin 0
     pinMode(operand1,INPUT);
     digitalWrite(operand1,HIGH); //use contemporary method, connect pin to ground through switch.
     r=digitalRead(operand1);
@@ -245,12 +263,14 @@ int execute(unsigned char operation,unsigned char operand1,int operand2){
     }
     if (r==0) r=-99;
     res0=operand1+97;
-    return r;
+    return r ;
     break;
 
   case 1: //write operation
+    operand1-=65; //A is pin 0
     pinMode(operand1,OUTPUT);
     digitalWrite(operand1,(operand2!=0));
+    res0=operand1+97;
     return 0;
     break;
 
@@ -261,6 +281,7 @@ int execute(unsigned char operation,unsigned char operand1,int operand2){
       Serial.print("Analog read returned ");
       Serial.println(r);
     }
+    //r+=(operand1+65)*256; //encode read pin // why? 
     return r;
     break;
 
@@ -268,7 +289,7 @@ int execute(unsigned char operation,unsigned char operand1,int operand2){
     analogWrite(operand1,operand2%256);
     return 0;
     break;
- 
+
   case 4: //pulse
     pinMode(operand1,OUTPUT);
     digitalWrite(operand1,HIGH);
@@ -283,14 +304,54 @@ int execute(unsigned char operation,unsigned char operand1,int operand2){
     break;
 
   case 6: //User task control
-    if (operand2==65535) {userTaskCounter=-1; return 65535;}
-    else  {userTaskCounter=operand2; return operand2;}    
+    if (operand2==65535) {
+      userTaskCounter=-1; 
+    }
+    else  {
+      userTaskCounter=operand2; 
+    }    
+    userTaskOperand1=operand1;
+    return 0;
     break;
 
+  case 7: //Read all pins
+    Serial.println(PORTB * 256 + PORTD);
+    return PORTB * 256 + PORTD;
+    break;
+    
   default:
     return -1; //can't happen
     break;
   }
+}
+
+long readVcc() {
+  // from http://provideyourown.com/2012/secret-arduino-voltmeter-measure-battery-voltage/
+  // by Scott Daniels
+  //
+  // Read 1.1V reference against AVcc
+  // set the reference to Vcc and the measurement to the internal 1.1V reference
+  #if defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+    ADMUX = _BV(REFS0) | _BV(MUX4) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
+  #elif defined (__AVR_ATtiny24__) || defined(__AVR_ATtiny44__) || defined(__AVR_ATtiny84__)
+    ADMUX = _BV(MUX5) | _BV(MUX0);
+  #elif defined (__AVR_ATtiny25__) || defined(__AVR_ATtiny45__) || defined(__AVR_ATtiny85__)
+    ADMUX = _BV(MUX3) | _BV(MUX2);
+  #else
+    ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
+  #endif  
+ 
+  delay(2); // Wait for Vref to settle
+  ADCSRA |= _BV(ADSC); // Start conversion
+  while (bit_is_set(ADCSRA,ADSC)); // measuring
+ 
+  uint8_t low  = ADCL; // must read ADCL first - it then locks ADCH  
+  uint8_t high = ADCH; // unlocks both
+ 
+  long result = (high<<8) | low;
+ 
+  result = 1125300L / result; // Calculate Vcc (in mV); 1125300 = 1.1*1023*1000
+  return result; // Vcc in millivolts
 }
 
 
