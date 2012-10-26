@@ -24,12 +24,11 @@
 //AFZPD @FA set digital pin 3 to 50% PWM
 //AFZRHxxFA read digital pin 7 
 //AFZTD  FA 8224 milliseconds pulse to pin 3
-//AFZ
+//AFZUXxxFA start user task
+//AFZUX/00/00FA stop user task
 //AFZQAxxFA queries the Arduino. Are you there?
 //AFÿQAxxFA queries any Arduino out there.
 //AFÿWNxxFA turn on all pin 13s on the network (disco)
-
-
 
 //the ID of this Arduino. Important only if you are sharing a port with others
 //as in the ZigBee case.
@@ -90,7 +89,10 @@ void loop() {
     }
   }
   else{
-    if (doUserTask && ((millis()-t0)>userTaskInterval)){
+    if (doUserTask && ((millis()-t0)>userTaskInterval) && ((userTaskCounter==-1) ||(userTaskCounter>0))){
+      if (userTaskCounter>0) {
+        userTaskCounter--;
+      }
       t0=millis();
       userTask();
     }
@@ -245,7 +247,7 @@ int execute(unsigned char operation,unsigned char operand1,int operand2){
     return r;
     break;
 
-  case 1: //write
+  case 1: //write operation
     pinMode(operand1,OUTPUT);
     digitalWrite(operand1,(operand2!=0));
     return 0;
@@ -265,7 +267,7 @@ int execute(unsigned char operation,unsigned char operand1,int operand2){
     analogWrite(operand1,operand2%256);
     return 0;
     break;
-
+ 
   case 4: //pulse
     pinMode(operand1,OUTPUT);
     digitalWrite(operand1,HIGH);
@@ -279,7 +281,10 @@ int execute(unsigned char operation,unsigned char operand1,int operand2){
     return broadcastDelay;
     break;
 
-  case 6: //User task toggle
+  case 6: //User task activate
+    if (operand2==0) {userTaskCounter=-1;}
+    else  {userTaskCounter=operand2;}
+    
     doUserTask=(operand2!=0);
     if (doUserTask) {
       return 1;
