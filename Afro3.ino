@@ -2,6 +2,8 @@
 //WA Aprile and AJC van der Helm
 //Studiolab, TUDelft
 
+//
+//v 0.1.1 added power voltage meter code. Now writing tests.
 //v 0.1.0 1 byte added to payload
 //v 0.0.7 userTask hook added
 //v 0.6.1 fixed bug in broadcast code (cast into signed char, ouch)
@@ -37,7 +39,7 @@
 //the ID of this Arduino. Important only if you are sharing a port with others
 //as in the ZigBee case.
 
-unsigned char id = 'N'; //
+unsigned char id = 'O'; //
 
 //enable to show debugging information about parsing and operations
 //not so good on broadcast channels
@@ -57,7 +59,8 @@ unsigned char requestID=0; //the last query the arduino has seen.
 
 long int t0=0; //the last time the user task was run
 long int userTaskInterval=100; //the time interval between calls to the user task
-long int userTaskCounter=0;
+//long int userTaskCounter=0;    //don't execute
+long int userTaskCounter=-1;   //repeat forever
 
 unsigned char userTaskOperand1; //a copy for the use of the userTask;
 
@@ -65,12 +68,14 @@ void userTask(long int t){
   static boolean blinkState=true;
   digitalWrite(13,blinkState);
   blinkState= !blinkState;
+  /*
   Serial.print(userTaskCounter);
   Serial.print(" ");
   Serial.print(userTaskOperand1);
   Serial.print(" ");
-    Serial.print(readVcc());
+  Serial.print(readVcc());
   Serial.println(t);
+  */
 }
 
 
@@ -101,6 +106,7 @@ void loop() {
     }
   }
   else{
+    //no character to process, we check if we need to run the user task
     if ((userTaskCounter!=0) && ((millis()-t0)>userTaskInterval)){
       if (userTaskCounter>0) {
         userTaskCounter--;
@@ -188,7 +194,9 @@ int processBuffer(){
     else if (c=='I') { //state of all digital pins
       op=7;
     }
-
+    else if (c=='V') { //measure the voltage input, good for battery testing
+      op=8;
+    }
     else {
       state=0;
       return -4;
@@ -229,7 +237,7 @@ int processBuffer(){
       return -6; //very bad finish at the very end
     }
     break;
-    
+
   default:
     return -7; //automaton hit a state it does not know. Very bad.
 
@@ -253,7 +261,7 @@ int execute(unsigned char operation,unsigned char operand1,int operand2){
 
   switch (operation) {
   case 0: //read
-  operand1-=65; //A is pin 0
+    operand1-=65; //A is pin 0
     pinMode(operand1,INPUT);
     digitalWrite(operand1,HIGH); //use contemporary method, connect pin to ground through switch.
     r=digitalRead(operand1);
@@ -275,8 +283,9 @@ int execute(unsigned char operation,unsigned char operand1,int operand2){
     break;
 
   case 2: //analog read
+      res0=operand1
+    operand1-=65;
     r=analogRead(operand1);
-    res0=operand1+65;
     if (debug) {
       Serial.print("Analog read returned ");
       Serial.println(r);
@@ -286,11 +295,13 @@ int execute(unsigned char operation,unsigned char operand1,int operand2){
     break;
 
   case 3: //set PWM
+  operand1-=65;
     analogWrite(operand1,operand2%256);
     return 0;
     break;
 
   case 4: //pulse
+  operand1-=65;
     pinMode(operand1,OUTPUT);
     digitalWrite(operand1,HIGH);
     //Serial.print("Pulse on");
@@ -315,44 +326,49 @@ int execute(unsigned char operation,unsigned char operand1,int operand2){
     break;
 
   case 7: //Read all pins
-    Serial.println(PORTB * 256 + PORTD);
     return PORTB * 256 + PORTD;
     break;
-    
+
+  case 8: //measure supply voltage
+    return readVcc();
+
+
   default:
     return -1; //can't happen
     break;
   }
 }
 
-long readVcc() {
+int readVcc() {
   // from http://provideyourown.com/2012/secret-arduino-voltmeter-measure-battery-voltage/
   // by Scott Daniels
   //
   // Read 1.1V reference against AVcc
   // set the reference to Vcc and the measurement to the internal 1.1V reference
-  #if defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
-    ADMUX = _BV(REFS0) | _BV(MUX4) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
-  #elif defined (__AVR_ATtiny24__) || defined(__AVR_ATtiny44__) || defined(__AVR_ATtiny84__)
-    ADMUX = _BV(MUX5) | _BV(MUX0);
-  #elif defined (__AVR_ATtiny25__) || defined(__AVR_ATtiny45__) || defined(__AVR_ATtiny85__)
-    ADMUX = _BV(MUX3) | _BV(MUX2);
-  #else
-    ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
-  #endif  
- 
+#if defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+  ADMUX = _BV(REFS0) | _BV(MUX4) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
+#elif defined (__AVR_ATtiny24__) || defined(__AVR_ATtiny44__) || defined(__AVR_ATtiny84__)
+  ADMUX = _BV(MUX5) | _BV(MUX0);
+#elif defined (__AVR_ATtiny25__) || defined(__AVR_ATtiny45__) || defined(__AVR_ATtiny85__)
+  ADMUX = _BV(MUX3) | _BV(MUX2);
+#else
+  ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
+#endif  
+
   delay(2); // Wait for Vref to settle
   ADCSRA |= _BV(ADSC); // Start conversion
   while (bit_is_set(ADCSRA,ADSC)); // measuring
- 
+
   uint8_t low  = ADCL; // must read ADCL first - it then locks ADCH  
   uint8_t high = ADCH; // unlocks both
- 
+
   long result = (high<<8) | low;
- 
+
   result = 1125300L / result; // Calculate Vcc (in mV); 1125300 = 1.1*1023*1000
   return result; // Vcc in millivolts
 }
+
+
 
 
 
