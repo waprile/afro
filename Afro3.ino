@@ -2,7 +2,7 @@
 //WA Aprile and AJC van der Helm
 //Studiolab, TUDelft
 
-//
+//v 0.1.2 added register file, with an eye to condition->action patterns
 //v 0.1.1 added power voltage meter code. Now writing tests.
 //v 0.1.0 1 byte added to payload
 //v 0.0.7 userTask hook added
@@ -30,7 +30,7 @@
 //AFZUX/xFF/xFFFA start user task, repeat forever
 //AFZUx/x00/x00  FA start the user task, repeat 8224 times
 //AFZUX/x00/x00FA stop user task
-
+//AFZVxxxFA measures the supply voltage with a 10% uncertainty. Result is an unsigned int in millivolts.
 
 //AFZQAxxFA queries the Arduino. Are you there?
 //AFÿQAxxFA queries any Arduino out there.
@@ -43,7 +43,8 @@ unsigned char id = 'O'; //
 
 //enable to show debugging information about parsing and operations
 //not so good on broadcast channels
-boolean debug=true; 
+boolean debug=false; 
+#define REGISTERSIZE 10
 
 //debug mode will toggle this pin regularly, to let you know the parser is working
 int beeperPin=12;
@@ -64,25 +65,29 @@ long int userTaskCounter=-1;   //repeat forever
 
 unsigned char userTaskOperand1; //a copy for the use of the userTask;
 
+long int reg[REGISTERSIZE];
+
 void userTask(long int t){
   static boolean blinkState=true;
   digitalWrite(13,blinkState);
   blinkState= !blinkState;
   /*
   Serial.print(userTaskCounter);
-  Serial.print(" ");
-  Serial.print(userTaskOperand1);
-  Serial.print(" ");
-  Serial.print(readVcc());
-  Serial.println(t);
-  */
+   Serial.print(" ");
+   Serial.print(userTaskOperand1);
+   Serial.print(" ");
+   Serial.print(readVcc());
+   Serial.println(t);
+   */
 }
+
 
 
 
 void setup() {
   Serial.begin(57600);
   pinMode(13,OUTPUT);
+  for(int i=0;i<REGISTERSIZE;i++) reg[i]=-1;
 }
 
 void loop() {
@@ -119,6 +124,7 @@ void loop() {
 
 int processBuffer(){
   static short int state=0;
+  static short int oldstate=0;
   static unsigned char op=255;
   static unsigned char operand1=255;
   static int operand2=-1;
@@ -132,6 +138,11 @@ int processBuffer(){
     Serial.print(" ");
     Serial.println(state);
   }
+  pinMode(state+3,OUTPUT);
+  digitalWrite(state+3,HIGH);
+  digitalWrite(oldstate+3,LOW);
+  oldstate=state;
+  
   switch(state) {
 
   case 0:
@@ -196,6 +207,12 @@ int processBuffer(){
     }
     else if (c=='V') { //measure the voltage input, good for battery testing
       op=8;
+    }
+    else if (c=='S') { //set a register
+      op=9;
+    }
+    else if (c=='G') { //get a register
+      op=10;
     }
     else {
       state=0;
@@ -283,29 +300,30 @@ int execute(unsigned char operation,unsigned char operand1,int operand2){
     break;
 
   case 2: //analog read
-      res0=operand1
+    res0=operand1;
     operand1-=65;
     r=analogRead(operand1);
     if (debug) {
       Serial.print("Analog read returned ");
       Serial.println(r);
     }
-    //r+=(operand1+65)*256; //encode read pin // why? 
+    if (r==0) r=-99;
     return r;
     break;
 
   case 3: //set PWM
-  operand1-=65;
+    operand1-=65;
     analogWrite(operand1,operand2%256);
     return 0;
     break;
 
   case 4: //pulse
-  operand1-=65;
+    operand1-=65;
     pinMode(operand1,OUTPUT);
     digitalWrite(operand1,HIGH);
-    //Serial.print("Pulse on");
+    if (debug)    Serial.print("Pulse on");
     delay(operand2);
+    if (debug)    Serial.print("Pulse off");
     digitalWrite(operand1,LOW);
     return 0;
     break;
@@ -330,16 +348,39 @@ int execute(unsigned char operation,unsigned char operand1,int operand2){
     break;
 
   case 8: //measure supply voltage
+    if (debug) {
+      Serial.println(readVcc());
+    }
     return readVcc();
+    break;
 
+  case 9: //register set
+    res0=operand1;
+    operand1-=65;
+    reg[operand1]=operand2;
+    return 0;
+    break;  
 
+  case 10: //register get
+    res0=operand1;
+    operand1-=65;
+    /*
+    Serial.print("Porcodiobegin>");
+    Serial.print(reg[operand1]);
+    Serial.print("<Porcodioend");
+    */
+    r=reg[operand1];
+    if (r==0) r=-99;
+    return r;
+    break;
+    
   default:
     return -1; //can't happen
     break;
   }
 }
 
-int readVcc() {
+unsigned int readVcc() {
   // from http://provideyourown.com/2012/secret-arduino-voltmeter-measure-battery-voltage/
   // by Scott Daniels
   //
@@ -367,6 +408,12 @@ int readVcc() {
   result = 1125300L / result; // Calculate Vcc (in mV); 1125300 = 1.1*1023*1000
   return result; // Vcc in millivolts
 }
+
+
+
+
+
+
 
 
 
