@@ -90,19 +90,19 @@ class TestBasicAfro(unittest.TestCase):
 	def tearDown(self):
 		self.port.close()
 
-	def SKIPtestAllAnalogWrite(self):
+	def testAllAnalogWrite(self):
 		for power in range(0,256,15):
 			for pin in self.analogWritable:
 				self.afro1.analogWrite(pin,power)
 				self.shortWait()
 
-	def SKIPtestAllDigitalRead(self):
+	def testAllDigitalRead(self):
 		for i in range(self.digitalPinsBottom,self.digitalPinsTop+1):
 			x=self.afro1.digitalRead(i)
 			self.shortWait()
 			print i,x
 			
-	def SKIPtestAllFlash(self):
+	def testAllFlash(self):
 		for i in range(0,4):
 			for i in range(self.digitalPinsBottom,self.digitalPinsTop+1):
 				self.afro1.digitalWrite(i,1)
@@ -113,15 +113,15 @@ class TestBasicAfro(unittest.TestCase):
 				self.shortWait()
 			self.mediumWait()
 	
-	def SKIPtestAllOff(self):
+	def testAllOff(self):
 		for i in range(self.digitalPinsBottom,self.digitalPinsTop+1):
 			self.afro1.digitalWrite(i,0)
 
-	def SKIPtestAllOn(self):
+	def testAllOn(self):
 		for i in range(self.digitalPinsBottom,self.digitalPinsTop+1):
 			self.afro1.digitalWrite(i,1)
 
-	def SKIPtestAllTimedPulse(self):
+	def testAllTimedPulse(self):
 		for i in range(self.digitalPinsBottom, self.digitalPinsTop+1):
 			self.afro1.timedPulse(i,50);
 			self.mediumWait()
