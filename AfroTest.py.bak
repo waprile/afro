@@ -6,6 +6,7 @@ import serial
 import logging
 import unittest
 import time
+import random
 
 class AfroUnit:
 	port=None
@@ -21,10 +22,9 @@ class AfroUnit:
 		self.port.write(string)
 
 	def receive(self):
-		skipping=False
+		skipping=True
 		cb1=''
 		while skipping:
-			print ".",
 			cb1=self.port.read(1)
 			skipping=(cb1!="S")
 		buffer=cb1
@@ -84,13 +84,14 @@ class TestBasicAfro(unittest.TestCase):
 	analogPinsBottom=0
 	analogPinsTop=7
 	registers=10
-	portName="COM62"
+	portName="COM67"
 	baudRate=57600
 	#pins that support PWM on your Arduino
 	analogWritable=[2,3,5,6,10,11] 
 	def setUp(self):
 		self.port=serial.Serial(port=self.portName,baudrate=self.baudRate)
-		self.afro1=AfroUnit(self.port,"O")
+		self.afro1=AfroUnit(self.port,"U")
+		self.afro2=AfroUnit(self.port,"T")
 	def shortWait(self):
 		time.sleep(0.05)
 	def mediumWait(self):
@@ -100,47 +101,75 @@ class TestBasicAfro(unittest.TestCase):
 	def tearDown(self):
 		self.port.close()
 
-	def testAllAnalogWrite(self):
+	def atestAllAnalogWrite(self):
 		for power in range(0,256,15):
 			for pin in self.analogWritable:
 				self.afro1.analogWrite(pin,power)
 				self.shortWait()
 
-	def testAllDigitalRead(self):
+	def atestAllDigitalRead(self):
 		for i in range(self.digitalPinsBottom,self.digitalPinsTop+1):
 			x=self.afro1.digitalRead(i)
 			self.shortWait()
 			print i,x
 			
-	def testAllFlash(self):
+	def atestAllFlash(self):
 		for i in range(0,4):
 			for i in range(self.digitalPinsBottom,self.digitalPinsTop+1):
 				self.afro1.digitalWrite(i,1)
-				self.shortWait()
+				#self.shortWait()
 			self.mediumWait()
 			for i in range(self.digitalPinsBottom,self.digitalPinsTop+1):
 				self.afro1.digitalWrite(i,0)
-				self.shortWait()
+				#self.shortWait()
 			self.mediumWait()
 	
-	def testAllOff(self):
+	def atestAllOff(self):
 		for i in range(self.digitalPinsBottom,self.digitalPinsTop+1):
 			self.afro1.digitalWrite(i,0)
 
-	def testAllOn(self):
+	def atestAllOn(self):
 		for i in range(self.digitalPinsBottom,self.digitalPinsTop+1):
 			self.afro1.digitalWrite(i,1)
 
-	def testAllTimedPulse(self):
+	def atestAllTimedPulse(self):
 		for i in range(self.digitalPinsBottom, self.digitalPinsTop+1):
 			self.afro1.timedPulse(i,50);
 			self.mediumWait()
 			
-	def SKIPtestAllSet(self):
+	def atestChaser(self):
+		for j in range(0,10):
+			for offset in range(0,3):
+				for i in range(self.digitalPinsBottom, self.digitalPinsTop+1,3):
+					self.afro1.digitalWrite(i+offset,1)
+				self.shortWait()
+				for i in range(self.digitalPinsBottom, self.digitalPinsTop+1,3):
+					self.afro1.digitalWrite(i+offset,0)
+	
+	def testMorse(self):
+		for j in range(0,20):
+			i=random.randrange(0,4)
+			if i==0:
+				self.afro2.digitalWrite(2,1)
+				self.shortWait()
+				self.afro2.digitalWrite(2,0)
+				self.shortWait()
+			elif i==1:
+				self.afro2.digitalWrite(2,1)
+				self.mediumWait()
+				self.afro2.digitalWrite(2,0)
+				self.shortWait()
+			elif i==2:
+				self.mediumWait()
+			elif i==4:
+				self.longWait()
+
+	
+	def atestAllSet(self):
 		for i in range(0,self.registers):
 			self.afro1.set(i,i*i)
 		
-	def testAllGet(self):
+	def atestAllGet(self):
 		for i in range(0,self.registers):
 			self.afro1.set(i,1+i*i)
 			self.mediumWait()
@@ -148,6 +177,7 @@ class TestBasicAfro(unittest.TestCase):
 			self.mediumWait()
 			r=self.afro1.get(i)
 			print i,r
+			self.assertEqual(int(r[2]),1+i*i)
 
 
 if __name__ == '__main__':

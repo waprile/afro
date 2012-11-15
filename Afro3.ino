@@ -2,18 +2,22 @@
 //WA Aprile and AJC van der Helm
 //Studiolab, TUDelft
 
-//v 0.1.2 added register file, with an eye to condition->action patterns
-//v 0.1.1 added power voltage meter code. Now writing tests.
-//v 0.1.0 1 byte added to payload
-//v 0.0.7 userTask hook added
-//v 0.6.1 fixed bug in broadcast code (cast into signed char, ouch)
-//v 0.0.6 added hashed delay before responding to a broadcast to reduce collisions
-//v 0.0.5 set one before highest bit of MSB in response to indicate analog read
-//v 0.0.4 conceptual automaton mistake fixed (palindrome)
-//v 0.0.3 output is more quiet, added ping and broadcast
-//v 0.0.2 fixes, added timed pulse and better semantics for PWM
-//v 0.0.1 two hour hack
-//v 0.0.0 you want WHAT in four days? October 2012
+// 0.2.3 much better blinking :-)
+// 0.2.2 version installed for Pisa workshop
+// 0.2.1 bugfix: debugging code remained inside and kept messing up the digital pins
+// 0.2.0 start adding tasks
+// 0.1.2 added register file, with an eye to condition->action patterns
+// 0.1.1 added power voltage meter code. Now writing tests.
+// 0.1.0 1 byte added to payload
+// 0.0.7 userTask hook added
+// 0.6.1 fixed bug in broadcast code (cast into signed char, ouch)
+// 0.0.6 added hashed delay before responding to a broadcast to reduce collisions
+// 0.0.5 set one before highest bit of MSB in response to indicate analog read
+// 0.0.4 conceptual automaton mistake fixed (palindrome)
+// 0.0.3 output is more quiet, added ping and broadcast
+// 0.0.2 fixes, added timed pulse and better semantics for PWM
+// 0.0.1 two hour hack
+// 0.0.0 you want WHAT in four days? October 2012
 
 //XX        1111     
 //01234567890123
@@ -31,7 +35,8 @@
 //AFZUx/x00/x00  FA start the user task, repeat 8224 times
 //AFZUX/x00/x00FA stop user task
 //AFZVxxxFA measures the supply voltage with a 10% uncertainty. Result is an unsigned int in millivolts.
-
+//AFZSA  FA sets register number 0 (A) to 8224
+//AFZGAxxFA gets register number 0
 //AFZQAxxFA queries the Arduino. Are you there?
 //AFÿQAxxFA queries any Arduino out there.
 //AFÿWNxxFA turn on all pin 13s on the network (disco)
@@ -39,7 +44,7 @@
 //the ID of this Arduino. Important only if you are sharing a port with others
 //as in the ZigBee case.
 
-unsigned char id = 'O'; //
+unsigned char id = 'Z'; //
 
 //enable to show debugging information about parsing and operations
 //not so good on broadcast channels
@@ -68,9 +73,21 @@ unsigned char userTaskOperand1; //a copy for the use of the userTask;
 long int reg[REGISTERSIZE];
 
 void userTask(long int t){
-  static boolean blinkState=true;
-  digitalWrite(13,blinkState);
-  blinkState= !blinkState;
+
+  /*
+   static unsigned char targetId=(id=='V'?'S':'V');
+   int sensorPin=2;
+   int ledPin=12;
+   if (!digitalRead(sensorPin)){
+   digitalWrite(ledPin,LOW);
+   afroDigitalWrite(targetId,ledPin,true);
+   } 
+   */
+
+  static unsigned char blinkcount=0;
+  digitalWrite(13,blinkcount==0);
+  blinkcount+=16;
+
   /*
   Serial.print(userTaskCounter);
    Serial.print(" ");
@@ -81,6 +98,9 @@ void userTask(long int t){
    */
 }
 
+/////////////////////////////////////////////////////////////
+// not many user serviceable parts beyond this line        //
+/////////////////////////////////////////////////////////////
 
 
 
@@ -91,7 +111,8 @@ void setup() {
 }
 
 void loop() {
-  if (Serial.available()>0){ //fixed length messages
+  static char buf[]="RSXYzzSR"; 
+  if (Serial.available()>0){ //characters available for processing
     res=processBuffer();
     if ((res>0)|(res==-99)) {
       //disgusting but necessary if some functions really need to return a zero
@@ -108,6 +129,13 @@ void loop() {
       Serial.write(highByte(res));  //primary result, two bytes
       Serial.write(lowByte(res));
       Serial.print("RS");
+      
+  buf[2]=id;
+  buf[3]=operation;
+  buf[4]=operand1;
+  buf[5]=operand2MSB;
+  buf[6]=operand2LSB;
+  Serial.write(buf);
     }
   }
   else{
@@ -138,11 +166,14 @@ int processBuffer(){
     Serial.print(" ");
     Serial.println(state);
   }
-  pinMode(state+3,OUTPUT);
-  digitalWrite(state+3,HIGH);
-  digitalWrite(oldstate+3,LOW);
-  oldstate=state;
-  
+  /* Uncomment this to see the state of the parser
+   // messes up most of the digital pins of coure
+   pinMode(state+3,OUTPUT);
+   digitalWrite(state+3,HIGH);
+   digitalWrite(oldstate+3,LOW);
+   oldstate=state;
+   */
+
   switch(state) {
 
   case 0:
@@ -181,40 +212,8 @@ int processBuffer(){
 
   case 3:
     state=4;
-    if (c=='R') { //digital Read
-      op=0;
-    }
-    else if (c=='W') { //digital Write
-      op=1;
-    }
-    else if (c=='A') { //Analog read
-      op=2;
-    }
-    else if (c=='P') { //PWM Output
-      op=3;
-    }
-    else if (c=='T') { //timed pulse
-      op=4;
-    }
-    else if (c=='Q') { //Query ping
-      op=5;
-    }
-    else if (c=='U') { //Control user task
-      op=6;
-    }
-    else if (c=='I') { //state of all digital pins
-      op=7;
-    }
-    else if (c=='V') { //measure the voltage input, good for battery testing
-      op=8;
-    }
-    else if (c=='S') { //set a register
-      op=9;
-    }
-    else if (c=='G') { //get a register
-      op=10;
-    }
-    else {
+    op=convertOpcode(c);
+    if (op==-1){
       state=0;
       return -4;
     } //wrong operation
@@ -263,6 +262,46 @@ int processBuffer(){
 
 }
 
+//rewrite for clarity, with a case
+//rewrite for speed with a table
+unsigned char convertOpcode(unsigned char c){
+  unsigned char op=-1;
+  if (c=='R') { //digital Read
+    op=0;
+  }
+  else if (c=='W') { //digital Write
+    op=1;
+  }
+  else if (c=='A') { //Analog read
+    op=2;
+  }
+  else if (c=='P') { //PWM Output
+    op=3;
+  }
+  else if (c=='T') { //timed pulse
+    op=4;
+  }
+  else if (c=='Q') { //Query ping
+    op=5;
+  }
+  else if (c=='U') { //Control user task
+    op=6;
+  }
+  else if (c=='I') { //state of all digital pins
+    op=7;
+  }
+  else if (c=='V') { //measure the voltage input, good for battery testing
+    op=8;
+  }
+  else if (c=='S') { //set a register
+    op=9;
+  }
+  else if (c=='G') { //get a register
+    op=10;
+  }
+  return op;
+}
+
 int execute(unsigned char operation,unsigned char operand1,int operand2){
   int r;
   res0=0;
@@ -296,6 +335,13 @@ int execute(unsigned char operation,unsigned char operand1,int operand2){
     pinMode(operand1,OUTPUT);
     digitalWrite(operand1,(operand2!=0));
     res0=operand1+97;
+    if (debug) {
+      Serial.println();
+      Serial.print("Digital write on pin ");
+      Serial.print(operand1);
+      Serial.print(" ");
+      Serial.println(operand2!=0? "true" : "false");
+    }
     return 0;
     break;
 
@@ -366,14 +412,14 @@ int execute(unsigned char operation,unsigned char operand1,int operand2){
     operand1-=65;
     /*
     Serial.print("Porcodiobegin>");
-    Serial.print(reg[operand1]);
-    Serial.print("<Porcodioend");
-    */
+     Serial.print(reg[operand1]);
+     Serial.print("<Porcodioend");
+     */
     r=reg[operand1];
     if (r==0) r=-99;
     return r;
     break;
-    
+
   default:
     return -1; //can't happen
     break;
@@ -407,6 +453,24 @@ unsigned int readVcc() {
 
   result = 1125300L / result; // Calculate Vcc (in mV); 1125300 = 1.1*1023*1000
   return result; // Vcc in millivolts
+}
+
+void afroSend(unsigned char id, unsigned char operation, unsigned char operand1, unsigned char operand2MSB, unsigned char operand2LSB){
+  static char buf[]="AFZAXxxFA";
+  buf[2]=id;
+  buf[3]=operation;
+  buf[4]=operand1;
+  buf[5]=operand2MSB;
+  buf[6]=operand2LSB;
+  Serial.write(buf);
+}
+
+void afroSend(unsigned char id, unsigned char operation, unsigned char operand1, unsigned int operand2){
+  afroSend(id,operation,operand1,operand2/256,operand2%256);
+}
+
+void afroDigitalWrite(unsigned char id, unsigned char pin, boolean value){
+  afroSend(id,'W',pin+65,value?14393:0);
 }
 
 
